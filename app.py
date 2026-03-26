@@ -212,11 +212,27 @@ def run_full_pipeline() -> None:
 
 @app.route("/")
 def landing():
-    return render_template("landing.html", api_key_set=bool(get_api_key()))
+    return redirect("/dashboard")
 
 @app.route("/dashboard")
 def dashboard():
     return render_template("dashboard.html")
+
+@app.route("/threats")
+def threats():
+    return render_template("threats.html")
+
+@app.route("/agents")
+def agents():
+    return render_template("agents.html")
+
+@app.route("/settings")
+def settings():
+    return render_template("settings.html")
+
+@app.route("/reports")
+def reports():
+    return render_template("reports.html")
 
 @app.route("/dash")
 def dash_redirect():

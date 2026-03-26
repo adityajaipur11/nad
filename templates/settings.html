@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+
+{% block title %}Settings — Destro{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-title">
+    <div class="icon"><i class="fas fa-cog"></i></div>
+    <h1>Settings</h1>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <!-- API CONFIGURATION -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        <i class="fas fa-key"></i> API Key Configuration
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">OpenRouter API Key</label>
+      <input type="password" id="apiKey" placeholder="sk-or-v1-...">
+      <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">
+        <i class="fas fa-info-circle"></i> Get your API key from <a href="https://openrouter.ai" target="_blank" style="color: var(--primary);">openrouter.ai</a>
+      </div>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button class="btn btn-primary" onclick="saveApiKey()" style="flex: 1;">
+        <i class="fas fa-save"></i> Save Key
+      </button>
+      <button class="btn btn-secondary" onclick="testApiKey()">
+        <i class="fas fa-flask"></i> Test
+      </button>
+    </div>
+    <div id="keyStatus" style="margin-top: 12px;"></div>
+  </div>
+
+  <!-- SYSTEM PREFERENCES -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        <i class="fas fa-sliders-h"></i> Preferences
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Auto-Refresh Interval</label>
+      <select id="refreshInterval">
+        <option value="3000">3 seconds</option>
+        <option value="5000" selected>5 seconds</option>
+        <option value="10000">10 seconds</option>
+        <option value="30000">30 seconds</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Theme</label>
+      <select id="themeSelect">
+        <option value="light">Light</option>
+        <option value="dark">Dark</option>
+        <option value="auto">Auto (System)</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" onclick="savePreferences()" style="width: 100%;">
+      <i class="fas fa-save"></i> Save Preferences
+    </button>
+  </div>
+
+  <!-- THREAT DETECTION -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        <i class="fas fa-shield-alt"></i> Threat Detection
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px; background: var(--surface-hover); border-radius: 8px;">
+        <div>
+          <div style="font-weight: 500; color: var(--text);">Attack Mode</div>
+          <div style="font-size: 12px; color: var(--text-muted);">Detect injection attacks</div>
+        </div>
+        <button class="btn btn-secondary btn-small" id="attackModeBtn" onclick="toggleAttackMode()">OFF</button>
+      </div>
+      <div style="font-size: 12px; color: var(--text-muted); padding: 12px; background: var(--primary-lighter); border-radius: 8px;">
+        <i class="fas fa-info-circle"></i> Attack mode monitors for prompt injection and suspicious patterns in headlines
+      </div>
+    </div>
+  </div>
+
+  <!-- API USAGE -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        <i class="fas fa-chart-bar"></i> Usage Statistics
+      </div>
+    </div>
+    <div style="display: grid; gap: 12px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--surface-hover); border-radius: 8px;">
+        <div style="color: var(--text-secondary);">Total Scans</div>
+        <div style="font-size: 18px; font-weight: 700;" id="totalScans">0</div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--surface-hover); border-radius: 8px;">
+        <div style="color: var(--text-secondary);">Threats Detected</div>
+        <div style="font-size: 18px; font-weight: 700;" id="totalDetected">0</div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px; background: var(--surface-hover); border-radius: 8px;">
+        <div style="color: var(--text-secondary);">Last Scan</div>
+        <div style="font-size: 12px; color: var(--text-muted);" id="lastScan">Never</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- DANGER ZONE -->
+  <div class="card" style="border-left: 4px solid var(--error);">
+    <div class="card-header">
+      <div class="card-title" style="color: var(--error);">
+        <i class="fas fa-exclamation-triangle"></i> Danger Zone
+      </div>
+    </div>
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <button class="btn btn-danger" onclick="clearAllData()" style="width: 100%;">
+        <i class="fas fa-trash"></i> Clear All Data
+      </button>
+      <div style="font-size: 12px; color: var(--error);">
+        <i class="fas fa-exclamation-circle"></i> This will reset all threats and scan history (irreversible)
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function loadSettings() {
+    fetch('/api/status').then(r => r.json()).then(data => {
+      document.getElementById('totalDetected').textContent = data.flagged_count || 0;
+      document.getElementById('lastScan').textContent = data.last_scan_time || 'Never';
+
+      const attackBtn = document.getElementById('attackModeBtn');
+      attackBtn.textContent = data.attack_mode ? 'ON' : 'OFF';
+      attackBtn.className = data.attack_mode ? 'btn btn-danger btn-small' : 'btn btn-secondary btn-small';
+    });
+
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.getElementById('themeSelect').value = savedTheme;
+
+    const savedInterval = localStorage.getItem('refreshInterval') || '5000';
+    document.getElementById('refreshInterval').value = savedInterval;
+  }
+
+  function saveApiKey() {
+    const key = document.getElementById('apiKey').value.trim();
+    if (!key) {
+      showStatus('Please enter an API key', 'error');
+      return;
+    }
+
+    fetch('/api/set-key', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key })
+    }).then(r => r.json()).then(data => {
+      showStatus('API key saved successfully', 'success');
+      document.getElementById('apiKey').value = '';
+    }).catch(err => {
+      showStatus('Failed to save API key: ' + err, 'error');
+    });
+  }
+
+  function testApiKey() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="border-width: 1px;"></span> Testing...';
+
+    fetch('/api/test-key', { method: 'POST' }).then(r => r.json()).then(data => {
+      if (data.ok) {
+        showStatus('API key is valid!', 'success');
+      } else {
+        showStatus('Invalid API key: ' + data.error, 'error');
+      }
+    }).finally(() => {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-flask"></i> Test';
+    });
+  }
+
+  function toggleAttackMode() {
+    const btn = document.getElementById('attackModeBtn');
+    const isOn = btn.textContent === 'ON';
+    const newState = isOn ? 'off' : 'on';
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="border-width: 1px;"></span>';
+
+    fetch(`/api/attack-mode/${newState}`, { method: 'POST' }).then(r => r.json()).then(data => {
+      btn.textContent = data.attack_mode ? 'ON' : 'OFF';
+      btn.className = data.attack_mode ? 'btn btn-danger btn-small' : 'btn btn-secondary btn-small';
+      btn.disabled = false;
+    });
+  }
+
+  function savePreferences() {
+    const theme = document.getElementById('themeSelect').value;
+    const interval = document.getElementById('refreshInterval').value;
+
+    localStorage.setItem('theme', theme);
+    localStorage.setItem('refreshInterval', interval);
+
+    if (theme !== 'auto') {
+      document.documentElement.style.colorScheme = theme;
+    }
+
+    showStatus('Preferences saved!', 'success');
+  }
+
+  function showStatus(message, type) {
+    const statusEl = document.getElementById('keyStatus');
+    statusEl.innerHTML = `<div class="alert alert-${type}"><i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i> ${message}</div>`;
+    setTimeout(() => { statusEl.innerHTML = ''; }, 4000);
+  }
+
+  function clearAllData() {
+    if (confirm('This will delete all threat data and scan history. Are you sure?')) {
+      location.href = '/'; // Redirect to home, will clear cache on backend
+      showStatus('Data cleared', 'success');
+    }
+  }
+
+  loadSettings();
+</script>
+{% endblock %}

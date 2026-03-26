@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+
+{% block title %}Reports — Destro{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-title">
+    <div class="icon"><i class="fas fa-file-chart-line"></i></div>
+    <h1>Reports & Analytics</h1>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-secondary" onclick="loadReports()">
+      <i class="fas fa-sync"></i> Refresh
+    </button>
+    <button class="btn btn-primary" onclick="generateReport()">
+      <i class="fas fa-download"></i> Generate PDF
+    </button>
+  </div>
+</div>
+
+<div class="grid grid-4">
+  <div class="stat-card">
+    <div class="stat-icon primary"><i class="fas fa-chart-line"></i></div>
+    <div class="stat-label">Total Headlines</div>
+    <div class="stat-value" id="reportTotal">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon error"><i class="fas fa-exclamation-circle"></i></div>
+    <div class="stat-label">Threat Rate</div>
+    <div class="stat-value" id="threatRate">0%</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon success"><i class="fas fa-check-circle"></i></div>
+    <div class="stat-label">Legitimate</div>
+    <div class="stat-value" id="legitimateCount">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon warning"><i class="fas fa-fire"></i></div>
+    <div class="stat-label">Critical Found</div>
+    <div class="stat-value" id="criticalFound">0</div>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <!-- THREAT DISTRIBUTION -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        <i class="fas fa-chart-pie"></i> Severity Distribution
+      </div>
+    </div>
+    <canvas id="severityChart" style="max-height: 250px;"></canvas>
+  </div>
+
+  <!-- CATEGORY BREAKDOWN -->
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        <i class="fas fa-list"></i> Top Categories
+      </div>
+    </div>
+    <canvas id="categoryChart" style="max-height: 250px;"></canvas>
+  </div>
+</div>
+
+<!-- SUMMARY -->
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">
+      <i class="fas fa-file-alt"></i> Executive Summary
+    </div>
+  </div>
+  <div id="summaryReport" style="line-height: 1.8; color: var(--text-secondary); white-space: pre-wrap; font-family: monospace; font-size: 13px; background: var(--surface-hover); padding: 16px; border-radius: 8px; max-height: 300px; overflow-y: auto;">
+    Loading report...
+  </div>
+  <button class="btn btn-primary" onclick="copySummary()" style="margin-top: 16px; width: 100%;">
+    <i class="fas fa-copy"></i> Copy Report
+  </button>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  let severityChart, categoryChart;
+
+  function loadReports() {
+    Promise.all([
+      fetch('/api/status').then(r => r.json()),
+      fetch('/api/threats').then(r => r.json()),
+      fetch('/api/summary').then(r => r.json())
+    ]).then(([status, threats, summary]) => {
+      renderStats(status, threats);
+      renderCharts(threats.threats || []);
+      renderSummary(status, threats, summary);
+    });
+  }
+
+  function renderStats(status, threatsData) {
+    const threats = threatsData.threats || [];
+    const total = status.total_scraped || 0;
+    const threatCount = status.flagged_count || 0;
+    const threatRate = total > 0 ? Math.round((threatCount / total) * 100) : 0;
+    const legitimate = total - threatCount;
+    const critical = status.critical_count || 0;
+
+    document.getElementById('reportTotal').textContent = total;
+    document.getElementById('threatRate').textContent = threatRate + '%';
+    document.getElementById('legitimateCount').textContent = legitimate;
+    document.getElementById('criticalFound').textContent = critical;
+  }
+
+  function renderCharts(threats) {
+    // Severity Chart
+    const severityCount = {
+      'CRITICAL': threats.filter(t => t.severity === 'CRITICAL').length,
+      'HIGH': threats.filter(t => t.severity === 'HIGH').length,
+      'MEDIUM': threats.filter(t => t.severity === 'MEDIUM').length,
+      'LOW': threats.filter(t => t.severity === 'LOW').length
+    };
+
+    const severityCtx = document.getElementById('severityChart').getContext('2d');
+    if (severityChart) severityChart.destroy();
+    severityChart = new Chart(severityCtx, {
+      type: 'doughnut',
+      data: {
+        labels: Object.keys(severityCount),
+        datasets: [{
+          data: Object.values(severityCount),
+          backgroundColor: ['#ef4444', '#f59e0b', '#06b6d4', '#10b981'],
+          borderColor: '#ffffff',
+          borderWidth: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: { legend: { position: 'bottom' } }
+      }
+    });
+
+    // Category Chart
+    const categoryCounts = {};
+    threats.forEach(t => {
+      const cat = t.category || 'Other';
+      categoryCounts[cat] = (categoryCounts[cat] || 0) + 1;
+    });
+
+    const topCategories = Object.entries(categoryCounts)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 6);
+
+    const categoryCtx = document.getElementById('categoryChart').getContext('2d');
+    if (categoryChart) categoryChart.destroy();
+    categoryChart = new Chart(categoryCtx, {
+      type: 'bar',
+      data: {
+        labels: topCategories.map(c => c[0]),
+        datasets: [{
+          label: 'Threats by Category',
+          data: topCategories.map(c => c[1]),
+          backgroundColor: '#3b82f6',
+          borderRadius: 6,
+          borderSkipped: false
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        indexAxis: 'y',
+        plugins: { legend: { display: false } },
+        scales: { x: { beginAtZero: true } }
+      }
+    });
+  }
+
+  function renderSummary(status, threatsData, summary) {
+    const threats = threatsData.threats || [];
+    const total = status.total_scraped || 0;
+    const critical = threats.filter(t => t.severity === 'CRITICAL').length;
+    const high = threats.filter(t => t.severity === 'HIGH').length;
+
+    const report = `
+DESTRO THREAT ANALYSIS REPORT
+Generated: ${new Date().toLocaleString()}
+
+EXECUTIVE SUMMARY
+═══════════════════════════════════════════
+
+Total Headlines Analyzed:  ${total}
+Threats Identified:        ${status.flagged_count || 0}
+Critical Severity:         ${critical}
+High Severity:             ${high}
+Threat Rate:               ${total > 0 ? Math.round((status.flagged_count / total) * 100) : 0}%
+
+API Status: ${status.api_key_set ? '✓ Configured' : '✗ Not configured'}
+Attack Detection: ${status.injection_detected ? '⚠ DETECTED' : '✓ Clear'}
+
+TOP THREAT CATEGORIES
+═══════════════════════════════════════════
+${threats.slice(0, 10).map((t, i) => `${i + 1}. ${t.category || 'Other'} (${t.severity})`).join('\n')}
+
+RECOMMENDATIONS
+═══════════════════════════════════════════
+1. Review and acknowledge all CRITICAL severity threats
+2. Implement mitigation strategies for HIGH severity items
+3. Monitor for injection attack patterns
+4. Keep API configurations current
+5. Run regular scans to maintain threat awareness
+
+DETAILS
+═══════════════════════════════════════════
+Last Scan: ${status.last_scan_time || 'Never'}
+Scan Status: ${status.scan_in_progress ? 'In Progress' : 'Idle'}
+
+For full threat details, visit the Threats section.
+    `;
+
+    document.getElementById('summaryReport').textContent = report;
+  }
+
+  function generateReport() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="border-width: 1px;"></span> Generating...';
+
+    setTimeout(() => {
+      const content = document.getElementById('summaryReport').textContent;
+      const blob = new Blob([content], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `report-${new Date().getTime()}.txt`;
+      a.click();
+
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-download"></i> Generate PDF';
+    }, 500);
+  }
+
+  function copySummary() {
+    const text = document.getElementById('summaryReport').textContent;
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = event.target;
+      const original = btn.innerHTML;
+      btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+      setTimeout(() => { btn.innerHTML = original; }, 2000);
+    });
+  }
+
+  loadReports();
+  setInterval(loadReports, 5000);
+</script>
+{% endblock %}

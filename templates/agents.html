@@ -1,0 +1,178 @@
+{% extends "base.html" %}
+
+{% block title %}Agents — Destro{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-title">
+    <div class="icon"><i class="fas fa-robot"></i></div>
+    <h1>AI Agents</h1>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-secondary" onclick="refreshAgents()">
+      <i class="fas fa-sync"></i> Refresh
+    </button>
+    <button class="btn btn-primary" onclick="startAllAgents()">
+      <i class="fas fa-play"></i> Start All
+    </button>
+  </div>
+</div>
+
+<div class="grid grid-4">
+  <div class="stat-card">
+    <div class="stat-icon primary"><i class="fas fa-cube"></i></div>
+    <div class="stat-label">Total Agents</div>
+    <div class="stat-value" id="totalAgents">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon success"><i class="fas fa-check-circle"></i></div>
+    <div class="stat-label">Active</div>
+    <div class="stat-value" id="activeCount">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon warning"><i class="fas fa-clock"></i></div>
+    <div class="stat-label">Idle</div>
+    <div class="stat-value" id="idleCount">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon primary"><i class="fas fa-tasks"></i></div>
+    <div class="stat-label">Tasks Completed</div>
+    <div class="stat-value" id="tasksTotal">0</div>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div id="agentsContainer" class="grid-2"></div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  let agents = [];
+
+  function loadAgents() {
+    fetch('/api/agents').then(r => r.json()).then(data => {
+      agents = data.agents || [];
+      renderAgents();
+      updateAgentStats();
+    });
+  }
+
+  function renderAgents() {
+    const container = document.getElementById('agentsContainer');
+    container.innerHTML = agents.map(agent => {
+      const statusColor = agent.status === 'Active' ? '#10b981' : '#94a3b8';
+      const statusIcon = agent.status === 'Active' ? 'circle' : 'circle';
+      return `
+        <div class="card" style="display: flex; flex-direction: column; gap: 16px;">
+          <div class="card-header">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <div style="width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg, var(--primary-light), var(--info-light)); display: flex; align-items: center; justify-content: center; font-size: 20px; color: var(--primary);">
+                <i class="fas fa-${getAgentIcon(agent.type)}"></i>
+              </div>
+              <div>
+                <div style="font-weight: 600; color: var(--text);">${agent.name}</div>
+                <div style="font-size: 12px; color: var(--text-muted);">${agent.type}</div>
+              </div>
+            </div>
+            <span class="badge" style="background: ${statusColor}20; color: ${statusColor}; display: flex; align-items: center; gap: 6px;">
+              <i class="fas fa-${statusIcon}" style="font-size: 8px;"></i> ${agent.status}
+            </span>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; font-size: 13px;">
+            <div>
+              <div style="color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Risk Score</div>
+              <div style="font-size: 20px; font-weight: 700; color: var(--text); margin-top: 4px;">${agent.risk_score || 0}</div>
+            </div>
+            <div>
+              <div style="color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;">Tasks</div>
+              <div style="font-size: 20px; font-weight: 700; color: var(--text); margin-top: 4px;">${agent.tasks_completed || 0}</div>
+            </div>
+          </div>
+
+          <div style="padding: 12px; background: var(--surface-hover); border-radius: 8px; font-size: 12px; color: var(--text-secondary);">
+            <strong>Last Activity:</strong> ${agent.last_activity || 'N/A'}
+          </div>
+
+          <div style="display: flex; gap: 8px;">
+            <button class="btn btn-secondary btn-small" onclick="updateAgent(${agent.id})" style="flex: 1;">
+              <i class="fas fa-redo"></i> Update
+            </button>
+            <button class="btn btn-primary btn-small" onclick="viewAgentDetails(${agent.id})" style="flex: 1;">
+              <i class="fas fa-info-circle"></i> Details
+            </button>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function getAgentIcon(type) {
+    const map = {
+      'Scraping': 'spider',
+      'Analysis': 'magnifying-glass',
+      'Security': 'shield-alt',
+      'AI / NLP': 'brain',
+      'Response': 'bolt',
+      'Processing': 'cogs'
+    };
+    return map[type] || 'cube';
+  }
+
+  function updateAgentStats() {
+    document.getElementById('totalAgents').textContent = agents.length;
+    document.getElementById('activeCount').textContent = agents.filter(a => a.status === 'Active').length;
+    document.getElementById('idleCount').textContent = agents.filter(a => a.status === 'Idle').length;
+    document.getElementById('tasksTotal').textContent = agents.reduce((sum, a) => sum + (a.tasks_completed || 0), 0);
+  }
+
+  function updateAgent(agentId) {
+    const btn = event.target.closest('.btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="border-width: 1px;"></span>';
+
+    fetch(`/api/agents/${agentId}/update`, { method: 'POST' }).then(r => r.json()).then(() => {
+      loadAgents();
+    }).finally(() => {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-redo"></i> Update';
+    });
+  }
+
+  function viewAgentDetails(agentId) {
+    const agent = agents.find(a => a.id === agentId);
+    if (agent) {
+      alert(`
+Agent: ${agent.name}
+Type: ${agent.type}
+Status: ${agent.status}
+Risk Score: ${agent.risk_score}
+Tasks Completed: ${agent.tasks_completed}
+Last Activity: ${agent.last_activity}
+      `);
+    }
+  }
+
+  function refreshAgents() {
+    const btn = event.target.closest('.btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="border-width: 1px;"></span> Refreshing...';
+
+    fetch('/api/agents/refresh', { method: 'POST' }).then(r => r.json()).then(() => {
+      loadAgents();
+    }).finally(() => {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-sync"></i> Refresh';
+    });
+  }
+
+  function startAllAgents() {
+    alert('All agents are running continuously in the background. Use Update to refresh their status.');
+  }
+
+  loadAgents();
+  setInterval(loadAgents, 4000);
+</script>
+{% endblock %}

@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block title %}Threats — Destro{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-title">
+    <div class="icon"><i class="fas fa-exclamation-triangle"></i></div>
+    <h1>Threats & Incidents</h1>
+  </div>
+  <div class="page-actions">
+    <input type="search" id="searchBox" placeholder="Search threats..." style="padding: 10px 16px; border: 1px solid var(--border); border-radius: 8px; width: 200px;">
+    <button class="btn btn-secondary" onclick="loadThreats()">
+      <i class="fas fa-sync"></i> Refresh
+    </button>
+    <button class="btn btn-primary" onclick="exportThreats()">
+      <i class="fas fa-download"></i> Export
+    </button>
+  </div>
+</div>
+
+<div class="grid grid-4">
+  <div class="stat-card">
+    <div class="stat-icon error"><i class="fas fa-exclamation-circle"></i></div>
+    <div class="stat-label">Total Threats</div>
+    <div class="stat-value" id="totalThreats">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon error"><i class="fas fa-fire"></i></div>
+    <div class="stat-label">Critical</div>
+    <div class="stat-value" id="criticalThreats">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon warning"><i class="fas fa-exclamation"></i></div>
+    <div class="stat-label">High</div>
+    <div class="stat-value" id="highThreats">0</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon primary"><i class="fas fa-chart-pie"></i></div>
+    <div class="stat-label">Acknowledged</div>
+    <div class="stat-value" id="ackThreats">0</div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">
+      <i class="fas fa-list"></i> All Threats
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <span class="badge badge-error" id="filterCritical" style="cursor: pointer;" onclick="toggleFilter('CRITICAL')">CRITICAL</span>
+      <span class="badge badge-warning" id="filterHigh" style="cursor: pointer;" onclick="toggleFilter('HIGH')">HIGH</span>
+    </div>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 40%;">Threat</th>
+          <th style="width: 12%;">Severity</th>
+          <th style="width: 15%;">Category</th>
+          <th style="width: 15%;">Status</th>
+          <th style="width: 18%;">Actions</th>
+        </tr>
+      </thead>
+      <tbody id="threatsTableBody"></tbody>
+    </table>
+  </div>
+  <div id="threatsEmptyState" class="empty-state" style="padding: 48px;">
+    <div class="empty-icon"><i class="fas fa-inbox"></i></div>
+    <div class="empty-title">No threats found</div>
+    <div class="empty-text">Run a scan from the dashboard to analyze security threats</div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  let allThreats = [];
+  let activeFilter = null;
+
+  function loadThreats() {
+    fetch('/api/threats').then(r => r.json()).then(data => {
+      allThreats = data.threats || [];
+      renderThreats();
+      updateStats();
+    });
+  }
+
+  function renderThreats() {
+    let filtered = allThreats;
+    if (activeFilter) {
+      filtered = allThreats.filter(t => t.severity === activeFilter);
+    }
+    const search = document.getElementById('searchBox').value.toLowerCase();
+    if (search) {
+      filtered = filtered.filter(t => (t.headline || '').toLowerCase().includes(search));
+    }
+
+    const tbody = document.getElementById('threatsTableBody');
+    const emptyState = document.getElementById('threatsEmptyState');
+
+    if (filtered.length === 0) {
+      tbody.innerHTML = '';
+      emptyState.style.display = 'flex';
+    } else {
+      tbody.innerHTML = filtered.map(t => `
+        <tr>
+          <td><strong>${(t.headline || 'N/A').substring(0, 60)}...</strong></td>
+          <td><span class="badge ${getSeverityBadge(t.severity)}">${t.severity || 'LOW'}</span></td>
+          <td>${t.category || 'Other'}</td>
+          <td>
+            <span class="badge ${getStatusBadge(t.status)}">
+              <i class="fas fa-${getStatusIcon(t.status)}"></i> ${t.status || 'new'}
+            </span>
+          </td>
+          <td>
+            <button class="btn btn-small btn-success" onclick="updateThreatStatus('${t.headline.replace(/'/g, "\\'")}', 'acknowledge')" title="Acknowledge">
+              <i class="fas fa-check"></i>
+            </button>
+            <button class="btn btn-small btn-warning" onclick="updateThreatStatus('${t.headline.replace(/'/g, "\\'")}', 'dismiss')" title="Dismiss">
+              <i class="fas fa-ban"></i>
+            </button>
+            <button class="btn btn-small btn-secondary" onclick="viewDetails('${t.headline.replace(/'/g, "\\'")}')">
+              <i class="fas fa-eye"></i>
+            </button>
+          </td>
+        </tr>
+      `).join('');
+      emptyState.style.display = 'none';
+    }
+  }
+
+  function updateStats() {
+    const total = allThreats.length;
+    const critical = allThreats.filter(t => t.severity === 'CRITICAL').length;
+    const high = allThreats.filter(t => t.severity === 'HIGH').length;
+    const ack = allThreats.filter(t => t.status === 'acknowledged').length;
+
+    document.getElementById('totalThreats').textContent = total;
+    document.getElementById('criticalThreats').textContent = critical;
+    document.getElementById('highThreats').textContent = high;
+    document.getElementById('ackThreats').textContent = ack;
+  }
+
+  function getSeverityBadge(severity) {
+    const map = { 'CRITICAL': 'badge-error', 'HIGH': 'badge-warning', 'MEDIUM': 'badge-info', 'LOW': 'badge-success' };
+    return map[severity] || 'badge-primary';
+  }
+
+  function getStatusBadge(status) {
+    const map = { 'acknowledged': 'badge-success', 'dismissed': 'badge-info', 'new': 'badge-warning' };
+    return map[status] || 'badge-primary';
+  }
+
+  function getStatusIcon(status) {
+    const map = { 'acknowledged': 'check-circle', 'dismissed': 'times-circle', 'new': 'clock' };
+    return map[status] || 'circle';
+  }
+
+  function toggleFilter(severity) {
+    activeFilter = activeFilter === severity ? null : severity;
+    renderThreats();
+  }
+
+  function updateThreatStatus(headline, action) {
+    fetch('/api/threat-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ headline, action })
+    }).then(r => r.json()).then(() => {
+      loadThreats();
+    });
+  }
+
+  function viewDetails(headline) {
+    const threat = allThreats.find(t => t.headline === headline);
+    if (threat) {
+      alert(`
+Title: ${threat.headline}
+Severity: ${threat.severity}
+Category: ${threat.category}
+Source: ${threat.source}
+CVE: ${threat.cve_ref || 'N/A'}
+Mitigation: ${threat.mitigation || 'No mitigation available'}
+      `);
+    }
+  }
+
+  function exportThreats() {
+    const csv = 'Threat,Severity,Category,Status,CVE\n' + allThreats.map(t =>
+      `"${t.headline}","${t.severity}","${t.category}","${t.status}","${t.cve_ref || 'N/A'}"`
+    ).join('\n');
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `threats-${new Date().getTime()}.csv`;
+    a.click();
+  }
+
+  document.getElementById('searchBox').addEventListener('input', renderThreats);
+  loadThreats();
+  setInterval(loadThreats, 5000);
+</script>
+{% endblock %}

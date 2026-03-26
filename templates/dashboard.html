@@ -1,0 +1,248 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard — Destro{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="page-title">
+    <div class="icon"><i class="fas fa-chart-line"></i></div>
+    <h1>Dashboard</h1>
+  </div>
+  <div class="page-actions">
+    <button class="btn btn-primary" onclick="startScan()">
+      <i class="fas fa-play"></i> Start Scan
+    </button>
+    <button class="btn btn-secondary" onclick="openUploadModal()">
+      <i class="fas fa-upload"></i> Upload File
+    </button>
+  </div>
+</div>
+
+<div id="statsContainer" class="grid grid-4">
+  <div class="stat-card">
+    <div class="stat-icon primary"><i class="fas fa-shield-alt"></i></div>
+    <div class="stat-label">Total Scanned</div>
+    <div class="stat-value" id="totalScanned">0</div>
+    <div class="stat-change">Headlines analyzed</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-icon error"><i class="fas fa-exclamation-circle"></i></div>
+    <div class="stat-label">Threats Found</div>
+    <div class="stat-value" id="threatsFound">0</div>
+    <div class="stat-change negative">Active threats</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-icon warning"><i class="fas fa-fire"></i></div>
+    <div class="stat-label">Critical Items</div>
+    <div class="stat-value" id="criticalCount">0</div>
+    <div class="stat-change negative">Requires action</div>
+  </div>
+
+  <div class="stat-card">
+    <div class="stat-icon success"><i class="fas fa-check-circle"></i></div>
+    <div class="stat-label">Attack Mode</div>
+    <div class="stat-value" id="attackMode">OFF</div>
+    <div class="stat-change">Injection detection</div>
+  </div>
+</div>
+
+<div class="grid grid-2">
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        <i class="fas fa-clock"></i> Recent Activity
+      </div>
+      <span id="lastScanTime" style="font-size: 12px; color: var(--text-muted);">Never</span>
+    </div>
+    <div id="activityList" style="display: flex; flex-direction: column; gap: 12px;"></div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <div class="card-title">
+        <i class="fas fa-info-circle"></i> Summary
+      </div>
+    </div>
+    <div id="summaryContent" style="font-size: 14px; line-height: 1.6; color: var(--text-secondary);">
+      No scan data available yet. Start a scan to see threat summary.
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-header">
+    <div class="card-title">
+      <i class="fas fa-list"></i> Recent Threats
+    </div>
+    <a href="/threats" class="btn btn-secondary btn-small">View All</a>
+  </div>
+  <div class="table-wrapper">
+    <table>
+      <thead>
+        <tr>
+          <th>Threat</th>
+          <th>Source</th>
+          <th>Severity</th>
+          <th>Status</th>
+          <th>Action</th>
+        </tr>
+      </thead>
+      <tbody id="threatsList"></tbody>
+    </table>
+  </div>
+  <div id="threatsEmpty" class="empty-state" style="padding: 32px;">
+    <div class="empty-icon"><i class="fas fa-inbox"></i></div>
+    <div class="empty-title">No threats detected</div>
+    <div class="empty-text">Run a scan to identify security threats from headlines</div>
+  </div>
+</div>
+
+<!-- UPLOAD MODAL -->
+<div class="modal-overlay" id="uploadModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title"><i class="fas fa-upload"></i> Upload File</div>
+      <button class="modal-close" onclick="closeModal('uploadModal')">×</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Select file (CSV, JSON, TXT)</label>
+      <input type="file" id="uploadFile" accept=".csv,.json,.txt">
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button class="btn btn-primary" onclick="uploadFile()" style="flex: 1;">
+        <i class="fas fa-cloud-upload-alt"></i> Upload
+      </button>
+      <button class="btn btn-secondary" onclick="closeModal('uploadModal')" style="flex: 1;">Cancel</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function loadStats() {
+    fetch('/api/status').then(r => r.json()).then(data => {
+      document.getElementById('totalScanned').textContent = data.total_scraped || 0;
+      document.getElementById('threatsFound').textContent = data.flagged_count || 0;
+      document.getElementById('criticalCount').textContent = data.critical_count || 0;
+      document.getElementById('attackMode').textContent = data.attack_mode ? 'ON' : 'OFF';
+      document.getElementById('lastScanTime').textContent = data.last_scan_time ? `${data.last_scan_time}` : 'Never';
+
+      const status = data.scan_in_progress ? 'Scanning...' : 'Idle';
+      const activity = `Last activity: ${status}`;
+      const activityEl = document.getElementById('activityList');
+      if (activityEl) {
+        activityEl.innerHTML = `<div style="padding: 12px; background: var(--primary-lighter); border-radius: 8px; color: var(--primary);">
+          <i class="fas fa-spinner" style="animation: spin 1s linear infinite;"></i> ${activity}
+        </div>`;
+      }
+    });
+
+    fetch('/api/threats').then(r => r.json()).then(data => {
+      const tbody = document.getElementById('threatsList');
+      const empty = document.getElementById('threatsEmpty');
+
+      if (data.threats && data.threats.length > 0) {
+        tbody.innerHTML = data.threats.slice(0, 5).map(t => `
+          <tr>
+            <td style="max-width: 300px; overflow: hidden; text-overflow: ellipsis;">${t.headline || 'N/A'}</td>
+            <td><span class="badge badge-info">${t.source || 'Unknown'}</span></td>
+            <td><span class="badge ${getSeverityClass(t.severity)}">${t.severity || 'LOW'}</span></td>
+            <td><span class="status-${getStatusClass(t.status)}">${t.status || 'new'}</span></td>
+            <td>
+              <button class="btn btn-small btn-success" onclick="threatAction('${t.headline.replace(/'/g, "\\'")}', 'acknowledge')" style="padding: 4px 8px;">
+                <i class="fas fa-check"></i>
+              </button>
+            </td>
+          </tr>
+        `).join('');
+        empty.style.display = 'none';
+      } else {
+        tbody.innerHTML = '';
+        empty.style.display = 'flex';
+      }
+    });
+
+    fetch('/api/summary').then(r => r.json()).then(data => {
+      const summaryEl = document.getElementById('summaryContent');
+      summaryEl.textContent = data.summary || 'No summary available yet.';
+    });
+  }
+
+  function getSeverityClass(severity) {
+    const map = { 'CRITICAL': 'badge-error', 'HIGH': 'badge-warning', 'MEDIUM': 'badge-info', 'LOW': 'badge-success' };
+    return map[severity] || 'badge-primary';
+  }
+
+  function getStatusClass(status) {
+    const map = { 'acknowledged': 'success', 'dismissed': 'idle', 'new': 'warning' };
+    return map[status] || 'idle';
+  }
+
+  function startScan() {
+    const btn = event.target.closest('.btn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="border-width: 2px;"></span> Scanning...';
+
+    fetch('/api/scan', { method: 'POST' }).then(r => r.json()).then(data => {
+      setTimeout(() => {
+        loadStats();
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-play"></i> Start Scan';
+      }, 2000);
+    }).catch(err => {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-play"></i> Start Scan';
+      alert('Scan failed: ' + err);
+    });
+  }
+
+  function threatAction(headline, action) {
+    fetch('/api/threat-action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ headline, action })
+    }).then(r => r.json()).then(() => {
+      loadStats();
+    });
+  }
+
+  function openUploadModal() {
+    document.getElementById('uploadModal').classList.add('active');
+  }
+
+  function closeModal(id) {
+    document.getElementById(id).classList.remove('active');
+  }
+
+  function uploadFile() {
+    const file = document.getElementById('uploadFile').files[0];
+    if (!file) { alert('Select a file'); return; }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="border-width: 2px;"></span> Uploading...';
+
+    fetch('/api/upload', { method: 'POST', body: formData }).then(r => r.json()).then(data => {
+      loadStats();
+      closeModal('uploadModal');
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> Upload';
+      alert(`Uploaded! ${data.threats} threats found`);
+    }).catch(err => {
+      btn.disabled = false;
+      btn.innerHTML = '<i class="fas fa-cloud-upload-alt"></i> Upload';
+      alert('Upload failed: ' + err);
+    });
+  }
+
+  loadStats();
+  setInterval(loadStats, 3000);
+</script>
+{% endblock %}
