@@ -1,0 +1,52 @@
+# ─────────────────────────────────────────────
+# attack_state.py
+# SINGLE shared attack state for the whole project.
+# Thread-safe: all mutations go through set_* helpers.
+# ─────────────────────────────────────────────
+
+import threading
+
+_lock = threading.Lock()
+
+ATTACK_MODE        = False
+ATTACK_DETECTED    = False
+INJECTION_DETECTED = False
+INJECTION_PAYLOAD  = ""
+
+
+def set_attack_mode(value: bool) -> None:
+    global ATTACK_MODE
+    with _lock:
+        ATTACK_MODE = value
+
+
+def set_attack_detected(value: bool) -> None:
+    global ATTACK_DETECTED
+    with _lock:
+        ATTACK_DETECTED = value
+
+
+def set_injection(detected: bool, payload: str = "") -> None:
+    global INJECTION_DETECTED, INJECTION_PAYLOAD
+    with _lock:
+        INJECTION_DETECTED = detected
+        INJECTION_PAYLOAD  = payload
+
+
+def reset_attack() -> None:
+    global ATTACK_DETECTED, INJECTION_DETECTED, INJECTION_PAYLOAD
+    with _lock:
+        ATTACK_DETECTED    = False
+        INJECTION_DETECTED = False
+        INJECTION_PAYLOAD  = ""
+
+
+def snapshot() -> dict:
+    """Return a consistent point-in-time copy of all state."""
+    with _lock:
+        return {
+            "attack_mode":        ATTACK_MODE,
+            "attack_detected":    ATTACK_DETECTED,
+            "injection_detected": INJECTION_DETECTED,
+            "injection_payload":  INJECTION_PAYLOAD,
+        }
