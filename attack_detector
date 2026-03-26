@@ -1,0 +1,83 @@
+# ─────────────────────────────────────────────
+# attack_detector.py
+# Scans scraped HTML / headlines for prompt injection attacks
+# ─────────────────────────────────────────────
+
+import logging
+import attack_state
+
+logger = logging.getLogger(__name__)
+
+INJECTION_KEYWORDS = [
+    "ignore all previous instructions",
+    "ignore previous instructions",
+    "reveal system prompt",
+    "send system files",
+    "disregard your instructions",
+    "you are now",
+    "new instructions:",
+    "override instructions",
+    "forget your previous",
+    "act as if",
+]
+
+
+def scan_for_injection(html: str) -> dict:
+    """
+    Scans raw HTML for hidden prompt injection payloads.
+    Returns a result dict with detected flag and payload.
+    """
+    if not html:
+        return {"detected": False, "payload": ""}
+
+    lower_html = html.lower()
+
+    for keyword in INJECTION_KEYWORDS:
+        if keyword in lower_html:
+            idx     = lower_html.find(keyword)
+            snippet = html[max(0, idx - 20): idx + 120].strip()
+
+            attack_state.set_injection(True, snippet)
+            logger.warning("Prompt injection detected in HTML: ...%s...", snippet[:80])
+
+            return {
+                "detected":        True,
+                "payload":         snippet,
+                "keyword_matched": keyword,
+            }
+
+    return {"detected": False, "payload": ""}
+
+
+def scan_headlines_for_injection(headlines: list) -> list:
+    """
+    Scans each headline text for injection attempts.
+    Returns list of flagged headlines.
+    FIX: now also sets INJECTION_PAYLOAD (was missing before).
+    """
+    flagged = []
+
+    for item in headlines:
+        headline_text = item.get("headline", "").lower()
+
+        for keyword in INJECTION_KEYWORDS:
+            if keyword in headline_text:
+                # Build a short snippet so the UI can show evidence
+                idx     = headline_text.find(keyword)
+                snippet = item.get("headline", "")[max(0, idx - 10): idx + 120].strip()
+
+                flagged.append({
+                    "headline": item.get("headline"),
+                    "source":   item.get("source"),
+                    "keyword":  keyword,
+                })
+
+                # FIX: set payload so dashboard can display it
+                attack_state.set_injection(True, snippet)
+                logger.warning(
+                    "Prompt injection in headline [%s]: %s",
+                    item.get("source", "?"), snippet[:80],
+                )
+                break   # one keyword match per headline is enough
+
+    return flagged
